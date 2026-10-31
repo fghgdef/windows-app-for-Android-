@@ -1,0 +1,80 @@
+name: Build and Release Custom Android Emulator
+
+on:
+  workflow_dispatch: # يتيح لك تشغيل البناء يدوياً بنقرة زر
+
+permissions:
+  contents: write # إذن إلزامي لكي يتمكن الـ Action من إنشاء Release ورفع الـ APK
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: 'gradle'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Tools & Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y git cmake ninja-build ccache
+
+      - name: Clone Emulator Source Code
+        run: |
+          # جلب سورس كود المحاكي الأساسي المدمج (Winlator كمثال مستقر ومفتوح المصدر)
+          git clone --depth=1 https://github.com emu_source
+
+      - name: Fetch and Integrate Box64 & DXVK
+        run: |
+          cd emu_source
+          mkdir -p ./app/src/main/assets/packages/
+          
+          # جلب أحدث الحزم الجاهزة لـ DXVK ودمجها داخل أصول التطبيق
+          curl -L -o ./app/src/main/assets/packages/dxvk-2.4.tar.gz https://github.com
+          
+          # جلب حزمة مسبقة الصنع من مترجم الأوامر Box64 المتوافقة مع أندرويد
+          curl -L -o ./app/src/main/assets/packages/box64.tar.gz https://github.com
+
+      - name: Compile and Package APK
+        run: |
+          cd emu_source
+          chmod +x ./gradlew
+          # بناء نسخة الـ APK بصيغة التصحيح (Debug) لتجنب تعقيدات التوقيع الرقمي للمفاتيح
+          ./gradlew assembleDebug
+
+      - name: Prepare APK Artifact
+        run: |
+          # نقل ملف الـ APK الناتج وتسميته بشكل واضح
+          mkdir -p output/
+          cp emu_source/app/build/outputs/apk/debug/app-debug.apk output/Wine-Box64-Custom-Emulator-Beta.apk
+
+      - name: Create Beta Release and Upload APK
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v1.0.0-beta
+          release_name: "Wine + Box64 + DXVK Android Emulator (Beta)"
+          body: |
+            Automated Beta Release of the Custom Windows Emulator for Android.
+            
+            **Included Components:**
+            - Wine Compatibility Layer
+            - Box64/Box86 Translators
+            - DXVK (Direct3D to Vulkan)
+            - Turnip Graphics Drivers
+            
+            *Note: This is a pre-release beta build compiled via GitHub Actions.*
+          draft: false
+          prerelease: true # وسم الإصدار كـ بيتا (Beta)
+          files: output/Wine-Box64-Custom-Emulator-Beta.apk
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
